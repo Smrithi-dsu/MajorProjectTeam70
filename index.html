@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waste Classifier</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            position: relative;
+            min-height: 100vh;
+            background-image: url("bg.avif");
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+            overflow: hidden;
+        }
+    
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.2); /* Dark overlay for better contrast */
+            z-index: -1;
+        }
+    
+        #head1 {
+            font-style: oblique;
+            text-align: center;
+            font-size: 50px;
+            margin-top: 5px;
+            color:crimson;
+        }
+    
+        .main-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin: 40px 20px;
+        }
+    
+        .actions {
+            display:flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            gap: 50px;
+            width: 40%;
+        }
+    
+        .action-box {
+            width: 70%;
+            max-width: 380px;
+            height: 70px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border: 4px solid rgba(0, 0, 0, 0.3); /* A softer border */
+            border-radius: 10px;
+            background: linear-gradient(90deg, #fbd786, #f7797d);
+            color: #000;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s ease, color 0.3s ease;
+            margin-left: 20px;
+        }
+
+        .action-box:hover {
+            transform: scale(1.08);
+            opacity: 0.95;
+            color: #000;
+        }
+
+        #cameraAction{
+            margin-top: 150px;
+        }
+    
+        .preview-container {
+            margin-left: 50px;
+            width: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            color: #000;
+        }
+    
+        #preview {
+            width: 100%;
+            max-width: 300px;
+            height: auto;
+            border-radius: 5px;
+            border: 2px solid #fff;
+        }
+    
+        #output {
+            margin-left: 150px;
+            font-size: 30px;
+            font-weight: bold;
+            text-align: center;
+        }
+    
+        video {
+            width: 100%;
+            max-width: 400px;
+            height: auto;
+            border-radius: 5px;
+            border: 2px solid #fff;
+            display: none;
+        }
+    
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1 id="head1">Waste Classification</h1>
+    <div class="main-container">
+        <!-- Left Side: Actions -->
+        <div class="actions">
+            <div class="action-box" id="cameraAction">
+                <p>Use Camera</p>
+            </div>
+            <div class="action-box">
+                <label for="uploadInput" style="cursor: pointer;">Choose File</label>
+                <input type="file" id="uploadInput" accept="image/*" style="display: none;">
+            </div>
+        </div>
+
+        <!-- Right Side: Preview and Predictions -->
+        <div class="preview-container">
+            <video id="video" autoplay></video>
+            <canvas id="canvas"></canvas>
+            <img id="preview" src="" alt="Preview" style="display: none;">
+            <div id="output">Your prediction will appear here.</div>
+        </div>
+    </div>
+
+    <script>
+        const cameraAction = document.getElementById('cameraAction');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const preview = document.getElementById('preview');
+        const uploadInput = document.getElementById('uploadInput');
+        const output = document.getElementById('output');
+        let imageBlob = null;
+
+        // Enable camera
+        cameraAction.addEventListener('click', async () => {
+            if (navigator.mediaDevices.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.style.display = 'block';
+                canvas.style.display = 'none'; // Hide canvas
+                preview.style.display = 'none'; // Hide preview
+            } else {
+                alert('Camera not supported on your browser!');
+            }
+        });
+
+        // Capture image from camera and send prediction
+        video.addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            canvas.toBlob(blob => {
+                imageBlob = blob;
+                preview.src = URL.createObjectURL(blob);
+                preview.style.display = 'block';
+                video.style.display = 'none';
+                sendPrediction();
+            }, 'image/jpeg');
+        });
+
+        // Handle image upload
+        uploadInput.addEventListener('change', event => {
+            const file = event.target.files[0];
+            if (file) {
+                imageBlob = file;
+                preview.src = URL.createObjectURL(file);
+                preview.style.display = 'block';
+                video.style.display = 'none';
+                sendPrediction();
+            }
+        });
+
+        // Send prediction request
+        async function sendPrediction() {
+            if (!imageBlob) {
+                output.textContent = 'Please capture or upload an image first.';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', imageBlob);
+
+            output.textContent = 'Predicting...';
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    output.textContent = `Prediction: ${data.prediction}, Confidence: ${data.confidence.toFixed(2)}`;
+                } else {
+                    output.textContent = `Error: ${data.error || 'Unknown error occurred'}`;
+                }
+            } catch (error) {
+                output.textContent = 'Error during prediction!';
+            }
+        }
+    </script>
+</body>
+</html>
